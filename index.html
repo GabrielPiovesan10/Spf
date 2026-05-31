@@ -37,8 +37,8 @@
     </div>
 
     <script>
-        // CONFIGURAÇÕES GLOBAIS DE AUTENTICAÇÃO
-        const SPOTIFY_CLIENT_ID = '6f8d30e159a24d8cb84523173d19642a';
+        // CONFIGURAÇÕES DO SEU APP
+        const SPOTIFY_CLIENT_ID = '0ecbe0f675ba49f39a2b94d6ccd906ce';
         const AI_API_KEY = 'AIzaSyCFdTwFvpRhwOkC6rr4qX8p9QSvjhyC6tE'; 
         
         const REDIRECT_URI = window.location.origin + window.location.pathname;
@@ -46,7 +46,6 @@
         
         let token = null;
 
-        // FUNÇÕES AUXILIARES PARA O FLUXO DE SEGURANÇA PKCE
         function generateRandomString(length) {
             const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
             const values = crypto.getRandomValues(new Uint8Array(length));
@@ -64,15 +63,14 @@
                 .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
         }
 
-        // 1. Checa se voltou do Spotify com o Código de Autorização na URL
         async function checkAuth() {
             const urlParams = new URLSearchParams(window.location.search);
             const code = urlParams.get('code');
 
             if (code) {
-                showStatus('⚡ Trocando código de segurança pelo token...');
+                showStatus('⚡ Trocando código de segurança...');
                 const codeVerifier = window.localStorage.getItem('code_verifier');
-                const TOKEN_URL = 'https:' + '//accounts.' + 'spotify.com/api/token';
+                const TOKEN_URL = 'https://accounts.spotify.com/api/token';
 
                 try {
                     const response = await fetch(TOKEN_URL, {
@@ -93,27 +91,22 @@
                     if (token) {
                         document.getElementById('auth-btn').style.display = 'none';
                         document.getElementById('generate-btn').style.display = 'block';
-                        showStatus('🟢 Spotify conectado via PKCE com sucesso!');
+                        showStatus('🟢 Spotify conectado!');
                         window.history.replaceState({}, document.title, window.location.pathname);
-                    } else {
-                        showStatus('❌ Erro ao validar o token de acesso.');
                     }
                 } catch (err) {
-                    console.error(err);
-                    showStatus('❌ Falha na conexão de segurança.');
+                    showStatus('❌ Falha na conexão.');
                 }
             }
         }
 
-        // 2. Evento do Botão Conectar - Executa a preparação PKCE e redireciona
         document.getElementById('auth-btn').addEventListener('click', async () => {
             const codeVerifier = generateRandomString(64);
             const hashed = await sha256(codeVerifier);
             const codeChallenge = base64urlencode(hashed);
-
             window.localStorage.setItem('code_verifier', codeVerifier);
 
-            const AUTH_URL = 'https:' + '//accounts.' + 'spotify.com/authorize';
+            const AUTH_URL = 'https://accounts.spotify.com/authorize';
             const params = new URLSearchParams({
                 client_id: SPOTIFY_CLIENT_ID,
                 response_type: 'code',
@@ -122,7 +115,6 @@
                 code_challenge: codeChallenge,
                 scope: SCOPES
             });
-
             window.location.href = `${AUTH_URL}?${params.toString()}`;
         });
 
@@ -130,57 +122,40 @@
             document.getElementById('status-msg').innerText = msg;
         }
 
-        // 3. Processamento e Montagem da Playlist com Inteligência Artificial
         document.getElementById('generate-btn').addEventListener('click', async () => {
             const userInput = document.getElementById('context-input').value.trim();
-            if (!userInput) return showStatus('Digite alguma vibe antes de gerar!');
+            if (!userInput) return showStatus('Digite alguma vibe antes!');
 
             try {
-                showStatus('🤖 IA interpretando o seu contexto...');
-                
-                const AI_URL = 'https:' + '//generativelanguage.' + 'googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + AI_API_KEY;
+                showStatus('🤖 IA interpretando...');
+                const AI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + AI_API_KEY;
                 const aiResponse = await fetch(AI_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: `Analise o contexto: "${userInput}". Me devolva estritamente um objeto JSON com três chaves de exemplo para a API de recomendações do Spotify: "genres" (array com até 2 gêneros válidos do Spotify ex: rock, pop, dance, hip-hop, deep-house), "energy" (decimal de 0.0 a 1.0) e "name" (um nome criativo com emoji para a playlist). Responda apenas o objeto bruto, sem markdown ou explicações.` }] }]
-                    })
+                    body: JSON.stringify({ contents: [{ parts: [{ text: `Analise o contexto: "${userInput}". Me devolva estritamente um objeto JSON com: "genres" (array ex: rock, pop), "energy" (0.0 a 1.0) e "name" (nome da playlist). Responda apenas o objeto bruto.` }] }] })
                 });
 
                 const aiData = await aiResponse.json();
-                const aiTextClean = aiData.candidates[0].content.parts[0].text.replace(/```json|```/g, "").trim();
-                const configAI = JSON.parse(aiTextClean);
+                const configAI = JSON.parse(aiData.candidates[0].content.parts[0].text.replace(/```json|```/g, "").trim());
 
-                showStatus('🎵 Procurando músicas ideais no Spotify...');
-                
-                const API_BASE = 'https:' + '//api.' + 'spotify.com/v1';
-                const genresSeed = configAI.genres.join(',');
-                
-                const trackReq = await fetch(`${API_BASE}/recommendations?seed_genres=${genresSeed}&target_energy=${configAI.energy}`, {
+                showStatus('🎵 Buscando músicas...');
+                const API_BASE = 'https://api.spotify.com/v1';
+                const trackReq = await fetch(`${API_BASE}/recommendations?seed_genres=${configAI.genres.join(',')}&target_energy=${configAI.energy}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const trackData = await trackReq.json();
                 const trackUris = trackData.tracks.map(t => t.uri);
 
-                if(trackUris.length === 0) throw new Error('Nenhuma música encontrada.');
-
-                showStatus('👤 Carregando sua conta...');
-                
-                const userReq = await fetch(`${API_BASE}/me`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                showStatus('📂 Criando playlist...');
+                const userReq = await fetch(`${API_BASE}/me`, { headers: { 'Authorization': `Bearer ${token}` } });
                 const userData = await userReq.json();
-
-                showStatus('📂 Criando a playlist personalizada...');
 
                 const playlistReq = await fetch(`${API_BASE}/users/${userData.id}/playlists`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: configAI.name, description: `Vibe: ${userInput} | GP Tech AI`, public: true })
+                    body: JSON.stringify({ name: configAI.name, public: true })
                 });
                 const playlistData = await playlistReq.json();
-
-                showStatus('⚡ Injetando faixas de áudio...');
 
                 await fetch(`${API_BASE}/playlists/${playlistData.id}/tracks`, {
                     method: 'POST',
@@ -188,15 +163,11 @@
                     body: JSON.stringify({ uris: trackUris })
                 });
 
-                showStatus('🚀 Sucesso! Abrindo aplicativo do Spotify...');
-
-                setTimeout(() => {
-                    window.location.href = `spotify:playlist:${playlistData.id}`;
-                }, 600);
+                showStatus('🚀 Abrindo Spotify!');
+                setTimeout(() => { window.location.href = `spotify:playlist:${playlistData.id}`; }, 500);
 
             } catch (err) {
-                console.error(err);
-                showStatus('❌ Erro ao gerar. Verifique os parâmetros informados.');
+                showStatus('❌ Erro no processamento.');
             }
         });
 
