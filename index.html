@@ -9,7 +9,7 @@
         body { background: #0b0c10; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
         .container { background: #1f2833; width: 100%; max-width: 450px; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid rgba(0, 255, 150, 0.1); text-align: center; }
         h1 { font-size: 24px; margin-bottom: 10px; color: #00ff96; font-weight: 800; letter-spacing: -0.5px; }
-        p { color: #c5a059; font-size: 14px; margin-bottom: 25px; color: #85929E; }
+        p { color: #85929E; font-size: 14px; margin-bottom: 25px; }
         textarea { width: 100%; height: 100px; background: #0b0c10; border: 1px solid #45f3ff; border-radius: 8px; color: #fff; padding: 12px; font-size: 14px; resize: none; margin-bottom: 20px; outline: none; }
         textarea:focus { border-color: #00ff96; box-shadow: 0 0 10px rgba(0, 255, 150, 0.2); }
         button { width: 100%; padding: 14px; border: none; border-radius: 25px; font-weight: 700; font-size: 15px; cursor: pointer; transition: all 0.3s ease; margin-bottom: 12px; }
@@ -18,7 +18,6 @@
         .btn-generate { background: #00ff96; color: #000; display: none; }
         .btn-generate:hover { background: #33ffaa; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,255,150,0.3); }
         .status { font-size: 13px; color: #00ff96; margin-top: 15px; font-family: monospace; min-height: 20px; }
-        .hidden { display: none; }
     </style>
 </head>
 <body>
@@ -38,13 +37,12 @@
     </div>
 
     <script>
-        // CONFIGURAÇÕES DO PROJETO - PREENCHA AQUI
-        const SPOTIFY_CLIENT_ID = 'const SPOTIFY_CLIENT_ID = '6f8d30e159a24d8cb84523173d19642a';
-'; 
+        // CONFIGURAÇÕES DO PROJETO - LIMPAS E CORRIGIDAS
+        const SPOTIFY_CLIENT_ID = '6f8d30e159a24d8cb84523173d19642a';
         const AI_API_KEY = 'AIzaSyCFdTwFvpRhwOkC6rr4qX8p9QSvjhyC6tE'; 
         
-        // Configurações Automáticas do Fluxo
-        const REDIRECT_URI = window.location.href.split('#')[0];
+        // Captura o link exato do seu GitHub Pages para o Spotify aceitar o redirecionamento
+        const REDIRECT_URI = window.location.origin + window.location.pathname;
         const SCOPES = 'playlist-modify-public playlist-modify-private user-read-private';
         
         let token = null;
@@ -63,7 +61,7 @@
             }
         }
 
-        // 2. Redireciona o usuário para a tela de permissão do Spotify
+        // 2. Redireciona o usuário para a tela de permissão do Spotify (Sem chaves soltas)
         document.getElementById('auth-btn').addEventListener('click', () => {
             const authUrl = `https://accounts.spotify.com/authorize?client_id=${SPOTIFY_CLIENT_ID}&response_type=token&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}`;
             window.location.href = authUrl;
@@ -81,8 +79,6 @@
             try {
                 showStatus('🤖 IA interpretando o contexto...');
                 
-                // Chamada de Exemplo para a API do Gemini (ou OpenAI, ajuste a URL se preferir)
-                // Aqui pedimos para a IA extrair gêneros compatíveis e nível de energia em formato JSON
                 const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${AI_API_KEY}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -97,9 +93,8 @@
 
                 showStatus('🎵 Buscando faixas no catálogo do Spotify...');
                 
-                // 4. Busca Recomendações no Spotify baseadas no filtro gerado pela IA
                 const genresSeed = configAI.genres.join(',');
-                const trackReq = await fetch(`https://api.spotify.com/v1/recommendations?limit=25&seed_genres=${genresSeed}&target_energy=${configAI.energy}`, {
+                const trackReq = await fetch(`https://api.spotify.com/v1/recommendations?seed_genres=${genresSeed}&target_energy=${configAI.energy}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const trackData = await trackReq.json();
@@ -109,7 +104,6 @@
 
                 showStatus('👤 Identificando seu perfil...');
                 
-                // 5. Pega o ID do Usuário Logado
                 const userReq = await fetch('https://api.spotify.com/v1/me', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -117,7 +111,6 @@
 
                 showStatus('📂 Criando nova playlist...');
 
-                // 6. Cria a Playlist Vazia na Conta do Usuário
                 const playlistReq = await fetch(`https://api.spotify.com/v1/users/${userData.id}/playlists`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -127,7 +120,6 @@
 
                 showStatus('⚡ Injetando as músicas na playlist...');
 
-                // 7. Adiciona as Músicas Encontradas na Playlist recém criada
                 await fetch(`https://api.spotify.com/v1/playlists/${playlistData.id}/tracks`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -136,18 +128,16 @@
 
                 showStatus('🚀 Abrindo o aplicativo do Spotify...');
 
-                // 8. O PULO DO GATO: Dispara o Deep Link para abrir o app oficial direto na Playlist
                 setTimeout(() => {
                     window.location.href = `spotify:playlist:${playlistData.id}`;
                 }, 500);
 
             } catch (err) {
                 console.error(err);
-                showStatus('❌ Erro no processamento. Verifique os IDs e chaves.');
+                showStatus('❌ Erro no processamento. Verifique sua conexão.');
             }
         });
 
-        // Inicializa verificando se o usuário acabou de voltar da autenticação do Spotify
         window.onload = checkAuth;
     </script>
 </body>
