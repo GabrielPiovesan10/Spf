@@ -2,7 +2,6 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI DJ | Custom Playlist</title>
     <style>
         body { background: #0b0c10; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
@@ -10,14 +9,14 @@
         textarea { width: 100%; height: 100px; background: #000; border: 1px solid #45f3ff; border-radius: 8px; color: #fff; padding: 10px; margin: 20px 0; outline: none; }
         button { width: 100%; padding: 15px; border: none; border-radius: 25px; font-weight: bold; cursor: pointer; background: #1DB954; color: #fff; margin-bottom: 10px; }
         .btn-gen { background: #00ff96; color: #000; display: none; }
-        #status-msg { font-size: 12px; color: #ffeb3b; margin-top: 10px; }
+        #status-msg { font-size: 12px; color: #ffeb3b; margin-top: 10px; word-wrap: break-word; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>AI CONTEXT DJ ⚡</h1>
         <button id="auth-btn">Conectar com o Spotify</button>
-        <textarea id="context-input" placeholder="Ex: Corrida, rock animado, 140bpm"></textarea>
+        <textarea id="context-input" placeholder="Ex: Rock clássico"></textarea>
         <button id="generate-btn" class="btn-gen">Gerar Playlist ⚡</button>
         <div id="status-msg"></div>
     </div>
@@ -27,67 +26,66 @@
         const AI_API_KEY = 'AIzaSyCFdTwFvpRhwOkC6rr4qX8p9QSvjhyC6tE';
         const REDIRECT_URI = window.location.origin + window.location.pathname;
 
-        async function checkAuth() {
-            const code = new URLSearchParams(window.location.search).get('code');
-            if (code) {
-                const verifier = localStorage.getItem('verifier');
-                const res = await fetch('https://accounts.spotify.com/api/token', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({ client_id: CLIENT_ID, grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI, code_verifier: verifier })
-                });
-                const data = await res.json();
-                localStorage.setItem('token', data.access_token);
-                document.getElementById('auth-btn').style.display = 'none';
-                document.getElementById('generate-btn').style.display = 'block';
-                document.getElementById('status-msg').innerText = '✅ Conectado!';
-            }
+        // Função de segurança para pegar a resposta da IA
+        async function getAiVibe(input) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${AI_API_KEY}`;
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ contents: [{ parts: [{ text: `Responda APENAS JSON: {"genres": ["rock"], "energy": 0.8, "name": "Minha Vibe"}. Analise: "${input}"` }] }] })
+            });
+            const data = await res.json();
+            if(!data.candidates) throw new Error("A IA não respondeu. Verifique sua API Key.");
+            const text = data.candidates[0].content.parts[0].text;
+            return JSON.parse(text.replace(/```json|```/g, '').trim());
         }
-
-        document.getElementById('auth-btn').onclick = () => {
-            const verifier = Math.random().toString(36).substring(2);
-            localStorage.setItem('verifier', verifier);
-            const challenge = btoa(verifier).replace(/=/g, '');
-            window.location.href = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=playlist-modify-public&code_challenge_method=S256&code_challenge=${challenge}`;
-        };
 
         document.getElementById('generate-btn').onclick = async () => {
             const msg = document.getElementById('status-msg');
             const token = localStorage.getItem('token');
-            const input = document.getElementById('context-input').value;
-            
             try {
                 msg.innerText = '🤖 IA processando...';
-                const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${AI_API_KEY}`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ contents: [{ parts: [{ text: `Responda apenas com JSON puro, sem textos extras: {"genres": ["rock"], "energy": 0.8, "name": "Vibe"}. Analise: "${input}"` }] }] })
-                });
-                
-                const data = await aiRes.json();
-                const text = data.candidates[0].content.parts[0].text;
-                const aiJson = JSON.parse(text.replace(/```json|```/g, '').trim());
+                const aiJson = await getAiVibe(document.getElementById('context-input').value);
                 
                 msg.innerText = '🎵 Buscando músicas...';
                 const headers = { 'Authorization': 'Bearer ' + token };
                 const me = await (await fetch('https://api.spotify.com/v1/me', { headers })).json();
+                
                 const pl = await (await fetch(`https://api.spotify.com/v1/users/${me.id}/playlists`, {
                     method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: aiJson.name })
                 })).json();
                 
-                const tracks = await (await fetch(`https://api.spotify.com/v1/recommendations?seed_genres=${aiJson.genres.join(',')}&target_energy=${aiJson.energy}`, { headers })).json();
+                const recs = await (await fetch(`https://api.spotify.com/v1/recommendations?seed_genres=${aiJson.genres.join(',')}&target_energy=${aiJson.energy}`, { headers })).json();
+                
                 await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/tracks`, {
                     method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ uris: tracks.tracks.map(t => t.uri) })
+                    body: JSON.stringify({ uris: recs.tracks.map(t => t.uri) })
                 });
                 
                 window.location.href = `spotify:playlist:${pl.id}`;
-            } catch (err) {
-                msg.innerText = '❌ Erro: ' + err.message;
-            }
+            } catch (err) { msg.innerText = '❌ ' + err.message; }
         };
-        checkAuth();
+
+        // Lógica de Auth (Check)
+        const code = new URLSearchParams(window.location.search).get('code');
+        if (code) {
+            fetch('https://accounts.spotify.com/api/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ client_id: CLIENT_ID, grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI, code_verifier: localStorage.getItem('verifier') })
+            }).then(r => r.json()).then(d => {
+                localStorage.setItem('token', d.access_token);
+                document.getElementById('auth-btn').style.display = 'none';
+                document.getElementById('generate-btn').style.display = 'block';
+            });
+        }
+
+        document.getElementById('auth-btn').onclick = () => {
+            const v = Math.random().toString(36).substring(2);
+            localStorage.setItem('verifier', v);
+            window.location.href = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=playlist-modify-public&code_challenge_method=S256&code_challenge=${btoa(v).replace(/=/g, '')}`;
+        };
     </script>
 </body>
 </html>
