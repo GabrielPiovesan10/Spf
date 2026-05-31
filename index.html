@@ -2,6 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI DJ | Custom Playlist</title>
     <style>
         body { background: #0b0c10; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
@@ -9,65 +10,58 @@
         textarea { width: 100%; height: 100px; background: #000; border: 1px solid #45f3ff; border-radius: 8px; color: #fff; padding: 10px; margin: 20px 0; outline: none; }
         button { width: 100%; padding: 15px; border: none; border-radius: 25px; font-weight: bold; cursor: pointer; background: #1DB954; color: #fff; margin-bottom: 10px; }
         .btn-gen { background: #00ff96; color: #000; display: none; }
-        #status-msg { font-size: 12px; color: #ffeb3b; margin-top: 10px; word-wrap: break-word; }
+        #status-msg { font-size: 13px; color: #ffeb3b; margin-top: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>AI CONTEXT DJ ⚡</h1>
         <button id="auth-btn">Conectar com o Spotify</button>
-        <textarea id="context-input" placeholder="Ex: Rock clássico"></textarea>
+        <textarea id="context-input" placeholder="Ex: Músicas para foco e trabalho"></textarea>
         <button id="generate-btn" class="btn-gen">Gerar Playlist ⚡</button>
         <div id="status-msg"></div>
     </div>
 
     <script>
         const CLIENT_ID = '0ecbe0f675ba49f39a2b94d6ccd906ce';
-        const AI_API_KEY = 'AIzaSyCFdTwFvpRhwOkC6rr4qX8p9QSvjhyC6tE';
         const REDIRECT_URI = window.location.origin + window.location.pathname;
+        const API_BASE = 'https://api.spotify.com/v1';
 
-        // Função de segurança para pegar a resposta da IA
-        async function getAiVibe(input) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${AI_API_KEY}`;
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ contents: [{ parts: [{ text: `Responda APENAS JSON: {"genres": ["rock"], "energy": 0.8, "name": "Minha Vibe"}. Analise: "${input}"` }] }] })
-            });
-            const data = await res.json();
-            if(!data.candidates) throw new Error("A IA não respondeu. Verifique sua API Key.");
-            const text = data.candidates[0].content.parts[0].text;
-            return JSON.parse(text.replace(/```json|```/g, '').trim());
-        }
-
+        // Lógica de Geração (Busca Direta Otimizada)
         document.getElementById('generate-btn').onclick = async () => {
             const msg = document.getElementById('status-msg');
             const token = localStorage.getItem('token');
+            const input = document.getElementById('context-input').value;
+            
+            if(!input) { msg.innerText = 'Digite algo primeiro!'; return; }
+            msg.innerText = '🎵 Buscando músicas para: ' + input;
+            
             try {
-                msg.innerText = '🤖 IA processando...';
-                const aiJson = await getAiVibe(document.getElementById('context-input').value);
-                
-                msg.innerText = '🎵 Buscando músicas...';
                 const headers = { 'Authorization': 'Bearer ' + token };
-                const me = await (await fetch('https://api.spotify.com/v1/me', { headers })).json();
+                const me = await (await fetch(`${API_BASE}/me`, { headers })).json();
                 
-                const pl = await (await fetch(`https://api.spotify.com/v1/users/${me.id}/playlists`, {
+                // Cria a Playlist
+                const pl = await (await fetch(`${API_BASE}/users/${me.id}/playlists`, {
                     method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: aiJson.name })
+                    body: JSON.stringify({ name: "Vibe: " + input, description: "Gerada pelo meu AI DJ", public: true })
                 })).json();
                 
-                const recs = await (await fetch(`https://api.spotify.com/v1/recommendations?seed_genres=${aiJson.genres.join(',')}&target_energy=${aiJson.energy}`, { headers })).json();
+                // Busca músicas baseadas no seu input
+                const search = await (await fetch(`${API_BASE}/search?q=${encodeURIComponent(input)}&type=track&limit=12`, { headers })).json();
+                const uris = search.tracks.items.map(t => t.uri);
                 
-                await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/tracks`, {
+                // Adiciona na Playlist
+                await fetch(`${API_BASE}/playlists/${pl.id}/tracks`, {
                     method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ uris: recs.tracks.map(t => t.uri) })
+                    body: JSON.stringify({ uris: uris })
                 });
                 
-                window.location.href = `spotify:playlist:${pl.id}`;
-            } catch (err) { msg.innerText = '❌ ' + err.message; }
+                msg.innerText = '🚀 Sucesso! Abrindo no seu Spotify...';
+                setTimeout(() => { window.location.href = `spotify:playlist:${pl.id}`; }, 1000);
+            } catch (err) { msg.innerText = '❌ Erro: Tente novamente.'; }
         };
 
-        // Lógica de Auth (Check)
+        // Lógica de Auth (PKCE)
         const code = new URLSearchParams(window.location.search).get('code');
         if (code) {
             fetch('https://accounts.spotify.com/api/token', {
@@ -78,6 +72,7 @@
                 localStorage.setItem('token', d.access_token);
                 document.getElementById('auth-btn').style.display = 'none';
                 document.getElementById('generate-btn').style.display = 'block';
+                document.getElementById('status-msg').innerText = '✅ Conectado!';
             });
         }
 
