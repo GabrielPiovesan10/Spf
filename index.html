@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI DJ | Custom Playlist Generator</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background: #0b0c10; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        .container { background: #1f2833; width: 100%; max-width: 450px; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid rgba(0, 255, 150, 0.1); text-align: center; }
+        h1 { font-size: 24px; margin-bottom: 10px; color: #00ff96; font-weight: 800; letter-spacing: -0.5px; }
+        p { color: #c5a059; font-size: 14px; margin-bottom: 25px; color: #85929E; }
+        textarea { width: 100%; height: 100px; background: #0b0c10; border: 1px solid #45f3ff; border-radius: 8px; color: #fff; padding: 12px; font-size: 14px; resize: none; margin-bottom: 20px; outline: none; }
+        textarea:focus { border-color: #00ff96; box-shadow: 0 0 10px rgba(0, 255, 150, 0.2); }
+        button { width: 100%; padding: 14px; border: none; border-radius: 25px; font-weight: 700; font-size: 15px; cursor: pointer; transition: all 0.3s ease; margin-bottom: 12px; }
+        .btn-spotify { background: #1DB954; color: #fff; }
+        .btn-spotify:hover { background: #1ed760; transform: translateY(-2px); }
+        .btn-generate { background: #00ff96; color: #000; display: none; }
+        .btn-generate:hover { background: #33ffaa; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,255,150,0.3); }
+        .status { font-size: 13px; color: #00ff96; margin-top: 15px; font-family: monospace; min-height: 20px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>AI CONTEXT DJ ⚡</h1>
+        <p>Digite o que você está fazendo ou seu humor atual e a inteligência artificial criará a playlist perfeita direto no seu Spotify.</p>
+        
+        <button id="auth-btn" class="btn-spotify">Conectar com o Spotify</button>
+
+        <div id="app-area">
+            <textarea id="context-input" placeholder="Ex: Tô na garagem dando um talento na moto no domingão, manda um rock pesado clássico pra animar..."></textarea>
+            <button id="generate-btn" class="btn-generate">Gerar Playlist no App ⚡</button>
+        </div>
+
+        <div id="status-msg" class="status"></div>
+    </div>
+
+    <script>
+        // CONFIGURAÇÕES DO PROJETO - PREENCHA AQUI
+        const SPOTIFY_CLIENT_ID = 'SEU_SPOTIFY_CLIENT_ID_AQUI'; 
+        const AI_API_KEY = 'SUA_API_KEY_DA_IA_AQUI'; 
+        
+        // Configurações Automáticas do Fluxo
+        const REDIRECT_URI = window.location.href.split('#')[0];
+        const SCOPES = 'playlist-modify-public playlist-modify-private user-read-private';
+        
+        let token = null;
+
+        // 1. Checa se o Token do Spotify está na URL (Callback do Login)
+        function checkAuth() {
+            const hash = window.location.hash.substring(1);
+            const params = new URLSearchParams(hash);
+            token = params.get('access_token');
+
+            if (token) {
+                document.getElementById('auth-btn').style.display = 'none';
+                document.getElementById('generate-btn').style.display = 'block';
+                showStatus('Spotify conectado com sucesso!');
+                window.location.hash = ''; // Limpa a URL por segurança
+            }
+        }
+
+        // 2. Redireciona o usuário para a tela de permissão do Spotify
+        document.getElementById('auth-btn').addEventListener('click', () => {
+            const authUrl = `https://accounts.spotify.com/authorize?client_id=${SPOTIFY_CLIENT_ID}&response_type=token&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}`;
+            window.location.href = authUrl;
+        });
+
+        function showStatus(msg) {
+            document.getElementById('status-msg').innerText = msg;
+        }
+
+        // 3. Processamento Principal ao Clicar no Botão de Gerar
+        document.getElementById('generate-btn').addEventListener('click', async () => {
+            const userInput = document.getElementById('context-input').value.trim();
+            if (!userInput) return showStatus('Digite alguma vibe antes de gerar!');
+
+            try {
+                showStatus('🤖 IA interpretando o contexto...');
+                
+                // Chamada de Exemplo para a API do Gemini (ou OpenAI, ajuste a URL se preferir)
+                // Aqui pedimos para a IA extrair gêneros compatíveis e nível de energia em formato JSON
+                const aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${AI_API_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: `Analise o contexto: "${userInput}". Me devolva estritamente um objeto JSON com três chaves de exemplo para a API de recomendações do Spotify: "genres" (array com até 2 gêneros válidos do Spotify ex: rock, pop, dance, hip-hop, deep-house), "energy" (decimal de 0.0 a 1.0) e "name" (um nome criativo com emoji para a playlist). Responda apenas o objeto bruto, sem markdown ou explicações.` }] }]
+                    })
+                });
+
+                const aiData = await aiResponse.json();
+                const aiTextClean = aiData.candidates[0].content.parts[0].text.replace(/```json|```/g, "").trim();
+                const configAI = JSON.parse(aiTextClean);
+
+                showStatus('🎵 Buscando faixas no catálogo do Spotify...');
+                
+                // 4. Busca Recomendações no Spotify baseadas no filtro gerado pela IA
+                const genresSeed = configAI.genres.join(',');
+                const trackReq = await fetch(`https://api.spotify.com/v1/recommendations?limit=25&seed_genres=${genresSeed}&target_energy=${configAI.energy}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const trackData = await trackReq.json();
+                const trackUris = trackData.tracks.map(t => t.uri);
+
+                if(trackUris.length === 0) throw new Error('Nenhuma música encontrada para esses filtros.');
+
+                showStatus('👤 Identificando seu perfil...');
+                
+                // 5. Pega o ID do Usuário Logado
+                const userReq = await fetch('https://api.spotify.com/v1/me', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const userData = await userReq.json();
+
+                showStatus('📂 Criando nova playlist...');
+
+                // 6. Cria a Playlist Vazia na Conta do Usuário
+                const playlistReq = await fetch(`https://api.spotify.com/v1/users/${userData.id}/playlists`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: configAI.name, description: `Gerada por IA para o contexto: ${userInput}`, public: true })
+                });
+                const playlistData = await playlistReq.json();
+
+                showStatus('⚡ Injetando as músicas na playlist...');
+
+                // 7. Adiciona as Músicas Encontradas na Playlist recém criada
+                await fetch(`https://api.spotify.com/v1/playlists/${playlistData.id}/tracks`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uris: trackUris })
+                });
+
+                showStatus('🚀 Abrindo o aplicativo do Spotify...');
+
+                // 8. O PULO DO GATO: Dispara o Deep Link para abrir o app oficial direto na Playlist
+                setTimeout(() => {
+                    window.location.href = `spotify:playlist:${playlistData.id}`;
+                }, 500);
+
+            } catch (err) {
+                console.error(err);
+                showStatus('❌ Erro no processamento. Verifique os IDs e chaves.');
+            }
+        });
+
+        // Inicializa verificando se o usuário acabou de voltar da autenticação do Spotify
+        window.onload = checkAuth;
+    </script>
+</body>
+</html>
