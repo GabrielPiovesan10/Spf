@@ -9,14 +9,14 @@
         textarea { width: 100%; height: 100px; background: #000; border: 1px solid #45f3ff; border-radius: 8px; color: #fff; padding: 10px; margin: 20px 0; outline: none; }
         button { width: 100%; padding: 15px; border: none; border-radius: 25px; font-weight: bold; cursor: pointer; background: #1DB954; color: #fff; margin-bottom: 10px; }
         .btn-gen { background: #00ff96; color: #000; display: none; }
-        #status-msg { font-size: 12px; color: #ffeb3b; margin-top: 10px; }
+        #status-msg { font-size: 13px; color: #ffeb3b; margin-top: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>AI CONTEXT DJ ⚡</h1>
         <button id="auth-btn">Conectar com o Spotify</button>
-        <textarea id="context-input" placeholder="Ex: Rock, Clássicos, Sertanejo..."></textarea>
+        <textarea id="context-input" placeholder="Ex: Rock clássico, Sertanejo..."></textarea>
         <button id="generate-btn" class="btn-gen">Gerar Playlist ⚡</button>
         <div id="status-msg"></div>
     </div>
@@ -24,40 +24,41 @@
     <script>
         const CLIENT_ID = '0ecbe0f675ba49f39a2b94d6ccd906ce';
         const REDIRECT_URI = window.location.origin + window.location.pathname;
+        const API = 'https://api.spotify.com/v1';
 
         document.getElementById('generate-btn').onclick = async () => {
             const msg = document.getElementById('status-msg');
             const token = localStorage.getItem('token');
             const input = document.getElementById('context-input').value;
             
+            if(!input) { msg.innerText = 'Digite um estilo!'; return; }
+            msg.innerText = '🎵 Buscando músicas...';
+            
             try {
-                msg.innerText = '🎵 Criando playlist...';
                 const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+                const me = await (await fetch(`${API}/me`, { headers })).json();
                 
-                // 1. Pega ID do usuário
-                const me = await (await fetch('https://api.spotify.com/v1/me', { headers })).json();
-                
-                // 2. Cria Playlist
-                const pl = await (await fetch(`https://api.spotify.com/v1/users/${me.id}/playlists`, {
+                // Cria a playlist
+                const pl = await (await fetch(`${API}/users/${me.id}/playlists`, {
                     method: 'POST', headers,
                     body: JSON.stringify({ name: "Vibe: " + input, public: true })
                 })).json();
                 
-                // 3. Busca Músicas
-                const search = await (await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(input)}&type=track&limit=12`, { headers })).json();
+                // Busca músicas diretas
+                const search = await (await fetch(`${API}/search?q=${encodeURIComponent(input)}&type=track&limit=15`, { headers })).json();
                 const uris = search.tracks.items.map(t => t.uri);
                 
-                // 4. Adiciona Músicas
-                await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/tracks`, {
+                // Adiciona na playlist
+                await fetch(`${API}/playlists/${pl.id}/tracks`, {
                     method: 'POST', headers,
                     body: JSON.stringify({ uris: uris })
                 });
                 
-                window.location.href = `spotify:playlist:${pl.id}`;
-            } catch (err) { msg.innerText = '❌ Erro! Confira o Redirect URI no Spotify Dashboard.'; }
+                msg.innerText = '🚀 Sucesso! Abrindo...';
+                setTimeout(() => { window.location.href = `spotify:playlist:${pl.id}`; }, 1000);
+            } catch (err) { msg.innerText = '❌ Erro de conexão. Tente novamente.'; }
         };
 
-        // Auth
         const code = new URLSearchParams(window.location.search).get('code');
         if (code) {
             fetch('https://accounts.spotify.com/api/token', {
@@ -68,6 +69,7 @@
                 localStorage.setItem('token', d.access_token);
                 document.getElementById('auth-btn').style.display = 'none';
                 document.getElementById('generate-btn').style.display = 'block';
+                document.getElementById('status-msg').innerText = '✅ Conectado!';
             });
         }
 
